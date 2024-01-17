@@ -1,10 +1,18 @@
 //! Database backup utilities.
+mod postgresql;
 
-use crate::Store;
-use anyhow::Result;
-use chrono::{DateTime, TimeZone, Utc};
+#[allow(clippy::module_name_repetitions)]
+pub use self::postgresql::BackupConfig;
+use self::postgresql::{backup_list, backup_list_len};
+use crate::backup::postgresql::DEFAULT_ZIP_EXTENSION;
+use crate::{backup::postgresql::create_postgres_backup, Store, DEFAULT_STATES};
+use anyhow::{anyhow, Context, Result};
+use chrono::{DateTime, Local, TimeZone, Utc};
 use rocksdb::backup::BackupEngineInfo;
+use std::fs::File;
+use std::io::Write;
 use std::{sync::Arc, time::Duration};
+use tempfile::tempdir_in;
 use tokio::sync::{Notify, RwLock};
 use tracing::{info, warn};
 
@@ -54,6 +62,141 @@ pub async fn schedule_periodic(
 
         }
     }
+}
+
+#[allow(clippy::module_name_repetitions)]
+pub struct DirBackupInfo {
+    pub file_name: String,
+    pub file_size: u64,
+    pub creation_time: DateTime<Utc>,
+}
+
+/// Schedules periodic database backups.
+#[allow(clippy::module_name_repetitions)]
+pub async fn backup_schedule_periodic(
+    store: Arc<RwLock<Store>>,
+    backup_cfg: Arc<RwLock<BackupConfig>>,
+    schedule: (Duration, Duration),
+    stop: Arc<Notify>,
+) {
+    use tokio::time::{sleep, Instant};
+
+    let (init, duration) = schedule;
+    let sleep = sleep(init);
+    tokio::pin!(sleep);
+
+    loop {
+        tokio::select! {
+            () = &mut sleep => {
+                sleep.as_mut().reset(Instant::now() + duration);
+                let _res = create_backup_in_separate_dir(&store, &backup_cfg);
+            }
+            () = stop.notified() => {
+                info!("creating a database backup before shutdown");
+                let _res = create_backup_in_separate_dir(&store, &backup_cfg);
+                stop.notify_one();
+                return;
+            }
+
+        }
+    }
+}
+
+/// Create a new database backup in a separate directory.
+///
+/// # Errors
+///
+/// Returns an error if backup fails.
+pub async fn create_backup_in_separate_dir(
+    store: &Arc<RwLock<Store>>,
+    backup_cfg: &Arc<RwLock<BackupConfig>>,
+) -> Result<String> {
+    info!("backing up database...");
+
+    // backup file/folder name
+    let current_backup_name = Local::now().format("%Y%m%d_%H%M%S").to_string();
+
+    // mkdir temporary folder (specify a path that can cover a large capacity)
+    let backup_path = { backup_cfg.read().await.backup_path.clone() };
+    let temp_dir = tempdir_in(&backup_path)?;
+    let Some(temp_dir_path) = temp_dir.path().to_str() else {
+        return Err(anyhow!("Backup temporary folder creation failed"));
+    };
+    let temp_backup_path = format!("{temp_dir_path}/{current_backup_name}");
+    if std::fs::create_dir(&temp_backup_path).is_err() {
+        return Err(anyhow!("Backup temporary folder creation failed"));
+    }
+
+    // backup rocksdb
+    {
+        // create version file
+        let file = format!("{temp_backup_path}/VERSION");
+        let mut f = File::create(&file).context("cannot create VERSION")?;
+        f.write_all(env!("CARGO_PKG_VERSION").as_bytes())
+            .context("cannot write VERSION")?;
+
+        // create backup
+        let rocksdb_backup_path = format!("{temp_backup_path}/{DEFAULT_STATES}");
+        let mut store = store.write().await;
+        if let Err(e) = store.backup_from_check_point(std::path::Path::new(&rocksdb_backup_path)) {
+            return Err(anyhow!("failed to create key-value database backup: {e:?}"));
+        }
+    }
+
+    // backup postgres
+    {
+        let backup_cfg = backup_cfg.read().await;
+        if let Err(e) = create_postgres_backup(&backup_cfg, &temp_backup_path) {
+            return Err(anyhow!(
+                "failed to create relational database backup: {e:?}"
+            ));
+        }
+    }
+
+    // make two database backup zipped file
+    let zip_file_name = format!("{current_backup_name}.{DEFAULT_ZIP_EXTENSION}");
+    let zip_path = format!("/{}/{zip_file_name}", backup_path.to_string_lossy());
+    let env_path = { backup_cfg.read().await.env_path.clone() };
+
+    tokio::spawn(async move {
+        // Move the ownership of the temp_dir so that it is not dropped until the compress operation is finished.
+        let temp_dir = temp_dir;
+        if let Some(temp_dir_path) = temp_dir.path().to_str() {
+            if let Err(e) = self::postgresql::run_command(
+                "tar",
+                &env_path,
+                &["cvzf", &zip_path, "-C", temp_dir_path, &current_backup_name],
+            ) {
+                warn!("database backup failed: {:?}", e);
+            } else {
+                info!("backing up database completed");
+            }
+        }
+    });
+
+    Ok(zip_file_name)
+}
+
+/// Lists the backup information for the database, which is kept in a separate directory.
+///
+/// # Errors
+///
+/// Returns an error if backup list fails to create
+pub async fn list_separate_backup_dir(
+    backup_cfg: &Arc<RwLock<BackupConfig>>,
+) -> Result<Vec<DirBackupInfo>> {
+    let backup_path = { backup_cfg.read().await.backup_path.clone() };
+    backup_list(&backup_path)
+}
+
+/// Returns the number of backups in the backup list.
+///
+/// # Errors
+///
+/// Returns an error if getting the number of backup lists fails.
+pub async fn count(backup_cfg: &Arc<RwLock<BackupConfig>>) -> usize {
+    let backup_path = { backup_cfg.read().await.backup_path.clone() };
+    backup_list_len(&backup_path)
 }
 
 /// Creates a new database backup, keeping the specified number of backups.

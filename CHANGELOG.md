@@ -5,6 +5,89 @@ file is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and
 this project adheres to [Semantic
 Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Introduced a new module `postgres`. this is module provides the backup
+  create/list functions of postgresql db.
+- Added `create_backup_in_separate_dir`/`list_separate_backup_dir` backup functions.
+  This functions does not use rocksdb's backup_engine. it uses the rocksdb's check point
+  to satisfy the creation and transfer of individual backup archives. The current form
+  of backup is unstable, so we will change to using the share_table_files option of the
+  backup engine in the future when it is supported.
+
+### Removed
+
+- The category table has been permanently removed from the PostgreSQL database
+  in this release.
+  - To ensure data integrity and avoid potential data loss, users currently
+    utilizing review-database versions below 0.22.0 must migrate to version
+    0.22.1 before proceeding with any further migrations.
+
+## [0.22.1] - 2024-01-10
+
+### Fixed
+
+- The default implementation of `Indexed::update` has a code that it assumes the
+  implementor is using key + id as the primary key in RocksDB. This is not true
+  for `IndexedMap`, which uses only the key as the primary key. This version
+  fixes the issue by using `indexed_key`, which behaves differently depending
+  on the implementor.
+- The default implementation of `Indexed::update` doesn't allow duplicated keys
+  which might not be true for `IndexedMultiMap`. This version fixes the issue by
+  guard it with a check.
+
+## [0.22.0] - 2024-01-09
+
+### Added
+
+- `migrate_backend` function is provided for user to transfer data between
+  PostgreSQL and RocksDB for a seamless backend transition.
+
+### Changed
+
+- Ensures that when updating elements in `Map` and `IndexedMap`, the system now
+  checks whether the new key already exists in the database. This prevents
+  unintentional overwrites or conflicts, providing a more robust and reliable
+  update mechanism.
+- Moved the category table from the PostgreSQL database to RocksDB.
+  - The category table data is now stored in RocksDB for improved performance
+    and scalability.
+  - A migration function has been provided to seamlessly transition data from
+    the old PostgreSQL table to RocksDB.
+- `nodes` table's fields are modified. Migration of data is supported by function
+  `migrate_0_20_to_0_22`.
+
+### Deprecated
+
+- `category` table from PostgreSQL database is now deprecated.
+
+## [0.21.0] - 2023-12-01
+
+### Added
+
+- Introduced the `batch_ts` attribute to the `Statistics` module, providing users
+  with the ability to retrieve the timestamp associated with the batch of column
+  statistics. This information is valuable for tracking changes over time and
+  aligning statistical insights with specific data batches.
+
+### Changed
+
+- Removed `batch_info` and `scores` arguments from `Model::from_storage` function.
+  These arguments were previously used for custom initialization of the
+  `batch_info` and `scores` fields within the model. This change means that when
+  you create a model using `Model::from_storage`, the  `batch_info` and `scores`
+  fields will now be initialized with their default values. If you previously
+  relied on custom values for these fields, you will need to update your code accordingly.
+
+### Removed
+
+- `event_range` Table Removal:
+  - The `event_range` table has been removed from the database schema.
+  - Information previously stored in `event_range` is now managed using the
+    `column_description` and `batch_info` tables.
+
 ## [0.20.0] - 2023-10-06
 
 ### Added
