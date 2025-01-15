@@ -26,6 +26,13 @@ Versioning](https://semver.org/spec/v2.0.0.html).
   instead of Display trait.
 - Modified the `ValueKind` enum to support different types of input for packet
   attribute triage.
+- Modified the `Node` structure to allow you to manage the configuration of all
+  remote servers that communicate with the REview.
+  - Introduced `Remote`, a new structure that stores only configuration drafts
+    for remote servers.
+  - Added a `remotes` field of type `Vec<Remote>` within the `Node` structure to
+    store the all remote server configuration.
+  - Added a `Datalake`, `TiContainer` field inside `node::kind`.
 
 ### Fixed
 
