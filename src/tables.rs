@@ -391,9 +391,9 @@ impl StateDb {
     }
 
     #[must_use]
-    pub(crate) fn configs(&self) -> Table<'_, Config> {
+    pub(crate) fn configs(&self) -> Table<'_, String> {
         let inner = self.inner.as_ref().expect("database must be open");
-        Table::<Config>::open(inner).expect("{CONFIGS} table must be present")
+        Table::<String>::open(inner).expect("{CONFIGS} table must be present")
     }
 
     #[must_use]
