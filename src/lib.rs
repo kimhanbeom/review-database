@@ -57,9 +57,10 @@ pub use self::tables::{
     OutlierInfo, OutlierInfoKey, OutlierInfoValue, PacketAttr, PeriodForSearch, ProtocolPorts,
     Response, ResponseKind, SamplingInterval, SamplingKind, SamplingPeriod, SamplingPolicy,
     SamplingPolicyUpdate, Structured, StructuredClusteringAlgorithm, Table, Template, Ti,
-    TiCmpKind, Tidb, TidbKind, TidbRule, TidbRuleKind, TimeSeries, TorExitNode, TrafficFilter,
-    TriagePolicy, TriagePolicyUpdate, TriageResponse, TriageResponseUpdate, TrustedDomain,
-    TrustedUserAgent, UniqueKey, Unstructured, UnstructuredClusteringAlgorithm, ValueKind,
+    TiCmpKind, Tidb, TidbKind, TidbRule, TidbRuleKind, TimeSeries, TopColumnsOfCluster,
+    TopMultimaps, TorExitNode, TrafficFilter, TriagePolicy, TriagePolicyUpdate, TriageResponse,
+    TriageResponseUpdate, TrustedDomain, TrustedUserAgent, UniqueKey, Unstructured,
+    UnstructuredClusteringAlgorithm, ValueKind,
 };
 pub use self::top_n::*;
 #[allow(deprecated)]
